@@ -82,7 +82,7 @@ case = scenario[0]
 if st.session_state.get("active_case") != case:
     st.session_state["active_case"] = case
     st.session_state["section"] = "Today"
-    st.session_state["reduced"] = {}
+    # Keep plans per scenario even when changing screens.
     st.session_state["other"] = False
     st.session_state["help"] = False
     st.session_state["plan"] = False
@@ -119,6 +119,30 @@ for nav_column, nav_section in zip(nav_columns, sections):
                   type="primary" if st.session_state.get("section", "Today") == nav_section else "secondary",
                   on_click=open_section, args=(nav_section,))
 section = st.session_state.get("section", "Today")
+
+# Streamlit clears widget keys when their screen is not rendered. Keep the
+# user's spending choices in separate, permanent session-state data instead.
+def plan_for_case():
+    if "saved_spending_plans" not in st.session_state:
+        st.session_state["saved_spending_plans"] = {}
+    return st.session_state["saved_spending_plans"].setdefault(case, {})
+
+def remember_spending_choice(label, suggested):
+    plan = plan_for_case()
+    active = st.session_state.get(f"select_{case}_{label}", False)
+    prior = plan.get(label, {})
+    plan[label] = {
+        "selected": active,
+        "amount": st.session_state.get(f"cut_{case}_{label}", prior.get("amount", suggested)),
+    }
+
+def remember_spending_amount(label, suggested):
+    plan = plan_for_case()
+    plan[label] = {
+        "selected": st.session_state.get(f"select_{case}_{label}", True),
+        "amount": st.session_state.get(f"cut_{case}_{label}", suggested),
+    }
+
 
 if section == "Today":
     st.subheader("Where do I stand?")
@@ -174,16 +198,28 @@ elif section == "Spend less":
         st.warning("The sample spending categories don't match the amounts you entered. Update the example before relying on these reductions.")
     st.caption("Choose what you'll stop or reduce. Nothing is selected for you.")
     saved = 0
+    spending_plan = plan_for_case()
     for title, spent, suggested in CATEGORIES:
+        prior = spending_plan.get(title, {})
+        select_key = f"select_{case}_{title}"
+        cut_key = f"cut_{case}_{title}"
+        # Widget keys might have been deleted while on another screen.
+        # Rehydrate from persistent data before instantiating each widget.
+        if select_key not in st.session_state:
+            st.session_state[select_key] = prior.get("selected", False)
+        if cut_key not in st.session_state:
+            st.session_state[cut_key] = min(spent, max(0, prior.get("amount", suggested)))
         left, mid, right = st.columns([2.7, 1.3, 2.0], vertical_alignment="center")
         with left:
-            active = st.checkbox(title, key=f"select_{case}_{title}", disabled=suggested == 0)
+            active = st.checkbox(title, key=select_key, disabled=suggested == 0,
+                on_change=remember_spending_choice, args=(title, suggested))
         with mid:
             st.write(money(spent))
         with right:
             if active and suggested:
                 change = st.number_input(f"Spend less on {title}", min_value=0, max_value=spent,
-                    value=suggested, step=10, label_visibility="collapsed", key=f"cut_{case}_{title}")
+                    step=10, label_visibility="collapsed", key=cut_key,
+                    on_change=remember_spending_amount, args=(title, suggested))
                 saved += change
             elif suggested:
                 st.caption(f"Try {money(suggested)}")
@@ -222,10 +258,11 @@ elif section == "See my future":
     st.markdown(f"**You spend {money(monthly_shortfall)} more than you earn each month. Where will you get the money?**")
 
     # Project both paths automatically. Selections are tentative plans, not verified savings.
+    spending_plan = plan_for_case()
     potential = sum(
-        st.session_state.get(f"cut_{case}_{label}", suggestion)
+        spending_plan.get(label, {}).get("amount", suggestion)
         for label, _, suggestion in CATEGORIES
-        if st.session_state.get(f"select_{case}_{label}", False)
+        if spending_plan.get(label, {}).get("selected", False)
     )
     without_gap = monthly_shortfall
     with_gap = max(0, monthly_shortfall - potential)
