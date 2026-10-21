@@ -124,6 +124,8 @@ with st.expander("Change this fictional example"):
 outgoing = float(bills + card + s["annual"])
 remaining_cash = float(cash + income) - outgoing
 monthly_shortfall = max(0, outgoing - float(income)) if case == "1" else 0
+# Offer extra help only if the sample shows an actual shortage or recurring spending problem.
+needs_help = remaining_cash < 0 or monthly_shortfall > 0
 
 # Streamlit forbids changing a widget's session-state key after that widget
 # has been created in the same run. Button callbacks run before the next render.
@@ -182,7 +184,8 @@ def set_full_spending_cut(label, spent):
     st.session_state[amount_widget_key(label)] = spent
 
 # Show only one screen at a time.
-sections = ["Today", "Spend less", "See my future"] if case == "1" else ["Today", "Get help"]
+sections = (["Today", "Spend less", "See my future"] if case == "1"
+            else (["Today", "Get help"] if needs_help else ["Today"]))
 if st.session_state.get("section") not in sections:
     st.session_state["section"] = "Today"
 nav_columns = st.columns(len(sections), gap="small")
@@ -398,11 +401,12 @@ else:
     st.write("Talk with someone you trust or contact the company you owe before missing a payment.")
 
 st.divider()
-with st.expander("I have a plan / I need help"):
-    st.write("**A plan isn't the same as money saved.** Check what actually happens before marking a problem solved.")
-    if st.button("I need help drafting a message"):
-        st.session_state["help"] = True
-    if st.session_state["help"]:
-        st.text_area("Draft for someone you trust", "I need help looking at my finances and choosing what to change. Can we talk today?")
-        st.caption("Nothing is sent by this demo.")
+if needs_help:
+    with st.expander("I have a plan / I need help"):
+        st.write("**A plan isn't the same as money saved.** Check what actually happens before marking a problem solved.")
+        if st.button("I need help drafting a message"):
+            st.session_state["help"] = True
+        if st.session_state["help"]:
+            st.text_area("Draft for someone you trust", "I need help looking at my finances and choosing what to change. Can we talk today?")
+            st.caption("Nothing is sent by this demo.")
 st.caption("Phase 1: fictional data only. No linked bank accounts, no AI diagnosis, no messages sent. Do not enter actual personal financial information in this public demo.")
