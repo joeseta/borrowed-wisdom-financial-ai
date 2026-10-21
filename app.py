@@ -103,7 +103,25 @@ monthly_shortfall = max(0, outgoing - float(income)) if case == "1" else 0
 
 # Streamlit forbids changing a widget's session-state key after that widget
 # has been created in the same run. Button callbacks run before the next render.
+def save_visible_spending_controls():
+    """Snapshot controls BEFORE Streamlit hides/deletes widget state."""
+    if st.session_state.get("section") != "Spend less":
+        return
+    plan = plan_for_case()
+    for label, spent, suggested in CATEGORIES:
+        if not suggested:
+            continue
+        selection_key = f"select_{case}_{label}"
+        amount_key = f"cut_{case}_{label}"
+        prior = plan.get(label, {})
+        plan[label] = {
+            "selected": bool(st.session_state.get(selection_key, prior.get("selected", False))),
+            "amount": int(st.session_state.get(amount_key, prior.get("amount", suggested))),
+        }
+
+
 def open_section(destination):
+    save_visible_spending_controls()
     st.session_state["section"] = destination
 
 # Show one section at a time. This is navigation, not a pile of expanded panels.
@@ -142,6 +160,13 @@ def remember_spending_amount(label, suggested):
         "selected": st.session_state.get(f"select_{case}_{label}", True),
         "amount": st.session_state.get(f"cut_{case}_{label}", suggested),
     }
+
+
+def set_full_spending_cut(label, spent):
+    """Set the full category amount and preserve the user's choice across pages."""
+    st.session_state[f"select_{case}_{label}"] = True
+    st.session_state[f"cut_{case}_{label}"] = spent
+    plan_for_case()[label] = {"selected": True, "amount": spent}
 
 
 if section == "Today":
@@ -206,9 +231,9 @@ elif section == "Spend less":
         # Widget keys might have been deleted while on another screen.
         # Rehydrate from persistent data before instantiating each widget.
         if select_key not in st.session_state:
-            st.session_state[select_key] = prior.get("selected", False)
+            st.session_state[select_key] = bool(prior.get("selected", False))
         if cut_key not in st.session_state:
-            st.session_state[cut_key] = min(spent, max(0, prior.get("amount", suggested)))
+            st.session_state[cut_key] = min(spent, max(0, int(prior.get("amount", suggested))))
         left, mid, right = st.columns([2.7, 1.3, 2.0], vertical_alignment="center")
         with left:
             active = st.checkbox(title, key=select_key, disabled=suggested == 0,
@@ -217,14 +242,28 @@ elif section == "Spend less":
             st.write(money(spent))
         with right:
             if active and suggested:
-                change = st.number_input(f"Spend less on {title}", min_value=0, max_value=spent,
-                    step=10, label_visibility="collapsed", key=cut_key,
-                    on_change=remember_spending_amount, args=(title, suggested))
+                amount_col, all_col = st.columns([3, 1], vertical_alignment="center")
+                with amount_col:
+                    change = st.number_input(f"Spend less on {title}", min_value=0, max_value=spent,
+                        step=10, label_visibility="collapsed", key=cut_key,
+                        on_change=remember_spending_amount, args=(title, suggested))
+                with all_col:
+                    st.button("All", key=f"all_{case}_{title}",
+                        help=f"Stop all {money(spent)} of {title.lower()} spending each month",
+                        on_click=set_full_spending_cut, args=(title, spent),
+                        use_container_width=True)
                 saved += change
             elif suggested:
                 st.caption(f"Try {money(suggested)}")
             else:
                 st.caption("Essential / review first")
+        # Persist selected state AND amount on every render; this is the durable
+        # source for the future screen, even after widgets are removed.
+        if suggested:
+            spending_plan[title] = {
+                "selected": bool(st.session_state[select_key]),
+                "amount": int(st.session_state.get(cut_key, prior.get("amount", suggested))),
+            }
     left, right = st.columns(2)
     left.metric("Spend less each month", money(saved))
     still = max(0, monthly_shortfall - saved)
