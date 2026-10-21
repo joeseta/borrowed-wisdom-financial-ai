@@ -52,27 +52,51 @@ def numbers_table(rows):
     st.markdown('<table style="width:100%;border-collapse:collapse;font-size:16px">'+body+'</table>', unsafe_allow_html=True)
 
 def compare_bars(original, changed, labels, unit="savings"):
-    """Two comparable outcomes on one scale. Values are nonnegative balances."""
-    maximum = max([*original, *changed, 1])
-    bg_a = "#c52332" if unit == "debt" else "#c52332"
-    bg_b = "#168a50"
+    """Compare paths. Savings may go below zero: that is an unfunded gap, not a bank balance."""
+    color_bad = "#c52332"
+    color_good = "#168a50"
     cards = []
-    for old, new, label in zip(original, changed, labels):
+    if unit == "savings":
+        # Common zero line across all dates; negative portions drop below it.
+        top_limit = max([0, *original, *changed, 1])
+        bottom_limit = max([0, *(-x for x in original), *(-x for x in changed), 1])
+        top_px, bottom_px = 135, 64
+
         def bar(value, color):
-            height = max(3, round(value / maximum * 145)) if value > 0 else 0
-            return (f'<div style="width:48%;text-align:center">'
-                    f'<div style="font-size:clamp(11px,2vw,15px);font-weight:700;color:{color};white-space:nowrap">{money(value)}</div>'
-                    f'<div style="height:155px;display:flex;align-items:flex-end;justify-content:center">'
-                    f'<div style="height:{height}px;width:86%;background:{color};border-radius:5px 5px 0 0"></div></div></div>')
+            above = round(max(0, value) / top_limit * top_px)
+            below = round(max(0, -value) / bottom_limit * bottom_px) if bottom_limit > 1 else 0
+            label = money(value) if value >= 0 else f"SHORT {money(-value)}"
+            return (f'<div style="flex:1;min-width:0;text-align:center">'
+                    f'<div style="font-size:clamp(10px,1.55vw,14px);font-weight:750;'
+                    f'color:{color};white-space:normal;min-height:36px">{label}</div>'
+                    f'<div style="height:{top_px}px;display:flex;align-items:flex-end;justify-content:center">'
+                    f'<div style="height:{above}px;width:80%;background:{color};border-radius:5px 5px 0 0"></div></div>'
+                    f'<div style="border-top:2px solid #566477;height:{bottom_px}px;'
+                    f'display:flex;align-items:flex-start;justify-content:center">'
+                    f'<div style="height:{below}px;width:80%;background:#991b1b;'
+                    f'border-radius:0 0 5px 5px"></div></div></div>')
+    else:
+        maximum = max([*original, *changed, 1])
+        def bar(value, color):
+            height = max(3, round(max(0,value) / maximum * 155)) if value > 0 else 0
+            return (f'<div style="flex:1;min-width:0;text-align:center">'
+                    f'<div style="font-size:clamp(11px,2vw,15px);font-weight:700;color:{color};'
+                    f'white-space:nowrap">{money(value)}</div>'
+                    f'<div style="height:165px;display:flex;align-items:flex-end;justify-content:center">'
+                    f'<div style="height:{height}px;width:80%;background:{color};'
+                    f'border-radius:5px 5px 0 0"></div></div></div>')
+    for old, new, label in zip(original, changed, labels):
         cards.append('<div style="flex:1;min-width:0;text-align:center">'
-                     '<div style="display:flex;gap:4px;align-items:end">'+bar(old,bg_a)+bar(new,bg_b)+'</div>'
-                     f'<div style="font-size:13px;font-weight:650;margin-top:8px">{label}</div></div>')
-    st.markdown('<div style="display:flex;gap:16px;margin:12px 0;border-bottom:1px solid #cbd5e1;padding-bottom:9px">'
+                     '<div style="display:flex;gap:5px;align-items:start">'
+                     +bar(old,color_bad)+bar(new,color_good)+'</div>'
+                     f'<div style="font-size:13px;font-weight:700;margin-top:7px">{label}</div></div>')
+    st.markdown('<div style="display:flex;gap:10px;margin:12px 0 4px;padding-bottom:12px">'
                 + ''.join(cards) + '</div>', unsafe_allow_html=True)
-    a_label = "No changes"; b_label = "With your selected cuts"
-    st.markdown(f'<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:0 0 15px">'
-                f'<span><b style="color:{bg_a}">■</b> {a_label}</span>'
-                f'<span><b style="color:{bg_b}">■</b> {b_label}</span></div>', unsafe_allow_html=True)
+    st.markdown('<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:0 0 15px">'
+                '<span><b style="color:#c52332">■</b> No changes</span>'
+                '<span><b style="color:#168a50">■</b> With your selected cuts</span>'
+                + ('<span><b style="color:#991b1b">■</b> Below zero = money still needed</span>' if unit == "savings" else '')
+                + '</div>', unsafe_allow_html=True)
 
 st.title("🧭 Borrowed Wisdom")
 st.caption("What do I need to do today?  |  Fictional examples")
@@ -318,18 +342,23 @@ elif section == "See my future":
     labels = ["Today", "3 months", "6 months", "12 months"]
     if funding == "Using savings":
         savings = st.number_input("Savings available ($)", min_value=0, max_value=1000000, value=10000, step=100)
-        no_change = [max(0, savings - without_gap * m) for m in months]
-        with_change = [max(0, savings - with_gap * m) for m in months]
-        st.markdown("**How much savings will be left?**")
+        no_change = [savings - without_gap * m for m in months]
+        with_change = [savings - with_gap * m for m in months]
+        st.markdown("**How much money will you have—or still need?**")
         compare_bars(no_change, with_change, labels, "savings")
         if without_gap > 0:
             when = ceil(savings / without_gap) if savings else 0
             st.error(f"**If nothing changes, your {money(savings)} savings run out in about {when} months.**")
+            if no_change[-1] < 0:
+                st.error(f"**At 12 months, your savings are gone. You still need {money(-no_change[-1])}. Where will you get the money?**")
         if potential:
-            st.success(f"**If you make your selected cuts, you could have {money(with_change[-1])} left after 12 months.**")
+            if with_change[-1] >= 0:
+                st.success(f"**With your selected cuts, you could have {money(with_change[-1])} left after 12 months.**")
+            else:
+                st.warning(f"**Even with your selected cuts, you would still need {money(-with_change[-1])} after 12 months.**")
         if with_gap > 0 and savings - with_gap * 12 < 0:
             st.warning("Your selected cuts would still use up your savings within 12 months.")
-        st.caption("Example assumes the same income and expenses each month and no interest on savings. Bars stop at $0; a further shortage would need another source of money. Your cuts must actually happen.")
+        st.caption("Illustration assumes the same income and expenses each month, with no interest on savings. Amounts below $0 show an unfunded shortage—not a negative savings balance. Your selected cuts must actually happen.")
     else:
         def projected_debt(gap):
             balance = 0.0
