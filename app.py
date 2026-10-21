@@ -48,6 +48,8 @@ if st.session_state.get('case_key') != key:
     st.session_state['plan'] = False
     st.session_state['reserve'] = 0
     st.session_state['extra'] = 0
+    st.session_state['finder'] = False
+    st.session_state['show_other_options'] = False
 
 with st.expander('Adjust this fictional situation', expanded=False):
     a,b=st.columns(2)
@@ -132,18 +134,82 @@ with st.expander('Show the numbers'):
 
 st.markdown('#### ② What do I need to do today?')
 if key == '1' and monthly_gap > 0:
-    st.write(f'**Find ways to close your ${monthly_gap:,.0f} monthly gap.**')
+    st.write(f'**Find a way to spend ${monthly_gap:,.0f} less each month.**')
     if st.button(f'Help me find ${monthly_gap:,.0f}', use_container_width=True):
         st.session_state['finder'] = not st.session_state.get('finder', False)
     if st.session_state.get('finder', False):
-        st.write('How much could you cut from your monthly spending?')
-        cut = st.number_input('Monthly spending you could reduce ($)', min_value=0, max_value=1000000, value=0, step=25, key='proposed_cut_'+key)
-        remaining = max(0, monthly_gap - cut)
-        if remaining:
-            st.info(f'You would still need to find ${remaining:,.0f} each month.')
+        st.markdown('##### Where does your money go?')
+        st.caption('Fictional monthly spending. Choose what you can spend less on. Change any suggested amount.')
+        # All figures are fictional. The default spending list is aligned with
+        # Scenario 1's $2,770 monthly bills and planned card payments.
+        categories = [
+            ('Rent', 1200, 0, False),
+            ('Groceries', 400, 75, True),
+            ('Restaurants', 300, 150, True),
+            ('Shopping', 250, 150, True),
+            ('Entertainment', 180, 100, True),
+            ('Transportation', 160, 40, True),
+            ('Utilities', 150, 0, False),
+            ('Other expenses', 130, 0, False),
+        ]
+        spending_total = sum(x[1] for x in categories)
+        if abs(spending_total - outflow) > 0.01:
+            st.warning('The example spending list does not match your adjusted bills. Savings below are illustrative until the list is updated.')
+        st.markdown('**Select what you would change each month:**')
+        selected_total = 0
+        for label, spent, suggestion, editable in categories:
+            left, mid, right = st.columns([3, 2, 2], vertical_alignment='center')
+            with left:
+                if editable:
+                    chosen = st.checkbox(label, value=False, key=f'choose_{key}_{label}')
+                else:
+                    st.write(f'**{label}**')
+                    chosen = False
+            with mid:
+                st.write(f'${spent:,.0f} now')
+            with right:
+                if chosen:
+                    proposed = st.number_input(
+                        f'Reduce {label} by ($)', min_value=0, max_value=spent,
+                        value=suggestion, step=10, key=f'reduce_{key}_{label}',
+                        label_visibility='collapsed',
+                    )
+                    selected_total += proposed
+                elif editable:
+                    st.caption(f'Suggested: ${suggestion:,.0f}')
+                else:
+                    st.caption('Essential / check first')
+        remaining = max(0, monthly_gap - selected_total)
+        st.markdown('---')
+        a, b = st.columns(2)
+        a.metric('You could save each month', f'${selected_total:,.0f}')
+        b.metric('Still need each month', f'${remaining:,.0f}')
+        if remaining > 0:
+            st.warning(f'**You still need to spend ${remaining:,.0f} less each month.**')
+            st.write('**Can you cut more from restaurants, shopping, or entertainment?**')
+            st.caption('Check more expenses above or raise an amount you already selected.')
+            if st.button('I cannot spend less. Show other options', key=f'other_{key}'):
+                st.session_state['show_other_options'] = True
+            if st.session_state.get('show_other_options', False):
+                st.markdown('##### What else can I do?')
+                st.write('**Earn more:** Extra work takes time. Only count income you can rely on.')
+                st.write('**Ask for assistance or a payment arrangement:** Some bills may have hardship options. Check before missing a payment.')
+                st.write('**Borrowing:** Borrowed money must be paid back. It does not fix a monthly spending problem.')
+                st.markdown('**Example: Borrowing the amount you still need, one time**')
+                st.caption('Illustrations, not actual offers. Rates, fees and repayment times vary. A loan needs a realistic repayment plan.')
+                examples = [
+                    ('Family / friend — no interest assumed', 0.0, 'May put relationships under pressure.'),
+                    ('Credit union — 12% APR, 30 days', remaining * 0.12 * 30 / 365, 'Approval and terms vary.'),
+                    ('Credit card — 25% APR, 30 days', remaining * 0.25 * 30 / 365, 'Cash advances may cost more and have extra fees.'),
+                    ('Payday loan — $15 per $100, 14 days', remaining * 0.15, 'High cost; repayment may be due very soon.'),
+                ]
+                for name, cost, note in examples:
+                    st.write(f'**{name}** — about **${cost:,.2f}** in cost; repay **${remaining+cost:,.2f}**. {note}')
+                st.error(f'**Important:** Borrowing ${remaining:,.0f} once does not remove the ${remaining:,.0f} monthly problem.')
+                st.write('**Before borrowing: How will you pay it back?**')
         else:
-            st.success('Your proposed cuts would cover the monthly gap, if you can keep them up.')
-        st.caption('This is a plan, not money saved yet. We have not checked your actual purchases.')
+            st.success('**Your choices could cover the monthly difference.** Next, put the changes into action.')
+        st.caption('These are possible changes, not confirmed savings. We have not connected bank or card transactions.')
 elif expected < 0:
     st.write(f'**Find a way to cover the ${abs(expected):,.0f} shortfall before your next bill is due.**')
 elif key == '4':
@@ -163,7 +229,7 @@ elif key == '5':
 else:
     st.write('A missed payment could cost you more. Check the due date and make sure the money is there.')
 
-st.markdown('#### ③ What happens now?')
+st.markdown('#### Your next step')
 a,b=st.columns(2)
 with a:
     if st.button('✅ I have a plan',use_container_width=True): st.session_state['plan']=True
