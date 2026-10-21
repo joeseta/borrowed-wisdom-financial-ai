@@ -127,71 +127,80 @@ monthly_shortfall = max(0, outgoing - float(income)) if case == "1" else 0
 
 # Streamlit forbids changing a widget's session-state key after that widget
 # has been created in the same run. Button callbacks run before the next render.
-def save_visible_spending_controls():
-    """Snapshot controls BEFORE Streamlit hides/deletes widget state."""
+# PERMANENT plan state and TEMPORARY widget state are intentionally separate.
+# Streamlit deletes widget state when a screen is hidden. It must never delete the plan.
+def saved_selected_key(label):
+    return f"bw_saved_selected_{case}_{label}"
+
+def saved_amount_key(label):
+    return f"bw_saved_amount_{case}_{label}"
+
+def checkbox_key(label):
+    return f"bw_ui_selected_{case}_{label}"
+
+def amount_widget_key(label):
+    return f"bw_ui_amount_{case}_{label}"
+
+def ensure_saved_choice(label, suggested):
+    st.session_state.setdefault(saved_selected_key(label), False)
+    st.session_state.setdefault(saved_amount_key(label), suggested)
+
+def store_choice(label):
+    st.session_state[saved_selected_key(label)] = bool(
+        st.session_state.get(checkbox_key(label), False)
+    )
+    if amount_widget_key(label) in st.session_state:
+        st.session_state[saved_amount_key(label)] = int(
+            st.session_state[amount_widget_key(label)]
+        )
+
+def snapshot_spending_screen():
+    # Save active widgets *before* switching away from the spending page.
     if st.session_state.get("section") != "Spend less":
         return
-    plan = plan_for_case()
     for label, spent, suggested in CATEGORIES:
         if not suggested:
             continue
-        selection_key = f"select_{case}_{label}"
-        amount_key = f"cut_{case}_{label}"
-        prior = plan.get(label, {})
-        plan[label] = {
-            "selected": bool(st.session_state.get(selection_key, prior.get("selected", False))),
-            "amount": int(st.session_state.get(amount_key, prior.get("amount", suggested))),
-        }
-
+        ensure_saved_choice(label, suggested)
+        if checkbox_key(label) in st.session_state:
+            store_choice(label)
 
 def open_section(destination):
-    save_visible_spending_controls()
+    snapshot_spending_screen()
+    if st.session_state.get("section") == "Spend less" and destination != "Spend less":
+        for label, _, suggested in CATEGORIES:
+            if suggested:
+                st.session_state.pop(checkbox_key(label), None)
+                st.session_state.pop(amount_widget_key(label), None)
     st.session_state["section"] = destination
 
-# Show one section at a time. This is navigation, not a pile of expanded panels.
+def set_full_spending_cut(label, spent):
+    # This button represents a planned 100% reduction, not verified savings.
+    st.session_state[saved_selected_key(label)] = True
+    st.session_state[saved_amount_key(label)] = spent
+    st.session_state[checkbox_key(label)] = True
+    st.session_state[amount_widget_key(label)] = spent
+
+# Show only one screen at a time.
 sections = ["Today", "Spend less", "See my future"] if case == "1" else ["Today", "Get help"]
-# Session state can be absent after Streamlit/browser resets or widget cleanup.
-# Default safely instead of crashing when rendering navigation.
 if st.session_state.get("section") not in sections:
     st.session_state["section"] = "Today"
 nav_columns = st.columns(len(sections), gap="small")
 for nav_column, nav_section in zip(nav_columns, sections):
     with nav_column:
         st.button(nav_section, key=f"nav_{nav_section}", use_container_width=True,
-                  type="primary" if st.session_state.get("section", "Today") == nav_section else "secondary",
+                  type="primary" if st.session_state["section"] == nav_section else "secondary",
                   on_click=open_section, args=(nav_section,))
-section = st.session_state.get("section", "Today")
+section = st.session_state["section"]
 
-# Streamlit clears widget keys when their screen is not rendered. Keep the
-# user's spending choices in separate, permanent session-state data instead.
-def plan_for_case():
-    if "saved_spending_plans" not in st.session_state:
-        st.session_state["saved_spending_plans"] = {}
-    return st.session_state["saved_spending_plans"].setdefault(case, {})
-
-def remember_spending_choice(label, suggested):
-    plan = plan_for_case()
-    active = st.session_state.get(f"select_{case}_{label}", False)
-    prior = plan.get(label, {})
-    plan[label] = {
-        "selected": active,
-        "amount": st.session_state.get(f"cut_{case}_{label}", prior.get("amount", suggested)),
-    }
-
-def remember_spending_amount(label, suggested):
-    plan = plan_for_case()
-    plan[label] = {
-        "selected": st.session_state.get(f"select_{case}_{label}", True),
-        "amount": st.session_state.get(f"cut_{case}_{label}", suggested),
-    }
-
-
-def set_full_spending_cut(label, spent):
-    """Set the full category amount and preserve the user's choice across pages."""
-    st.session_state[f"select_{case}_{label}"] = True
-    st.session_state[f"cut_{case}_{label}"] = spent
-    plan_for_case()[label] = {"selected": True, "amount": spent}
-
+def total_selected_cuts():
+    total = 0
+    for label, spent, suggested in CATEGORIES:
+        if suggested:
+            ensure_saved_choice(label, suggested)
+            if st.session_state[saved_selected_key(label)]:
+                total += min(spent, max(0, int(st.session_state[saved_amount_key(label)])))
+    return total
 
 if section == "Today":
     st.subheader("Where do I stand?")
@@ -246,48 +255,44 @@ elif section == "Spend less":
     if abs(sum(amount for _, amount, _ in CATEGORIES) - outgoing) > 0.01:
         st.warning("The sample spending categories don't match the amounts you entered. Update the example before relying on these reductions.")
     st.caption("Choose what you'll stop or reduce. Nothing is selected for you.")
-    saved = 0
-    spending_plan = plan_for_case()
+    # Each visit reconstructs temporary UI controls from a *permanent* plan.
+    # The saved values survive Streamlit's cleanup of hidden widgets.
     for title, spent, suggested in CATEGORIES:
-        prior = spending_plan.get(title, {})
-        select_key = f"select_{case}_{title}"
-        cut_key = f"cut_{case}_{title}"
-        # Widget keys might have been deleted while on another screen.
-        # Rehydrate from persistent data before instantiating each widget.
-        if select_key not in st.session_state:
-            st.session_state[select_key] = bool(prior.get("selected", False))
-        if cut_key not in st.session_state:
-            st.session_state[cut_key] = min(spent, max(0, int(prior.get("amount", suggested))))
+        select_key = checkbox_key(title)
+        cut_key = amount_widget_key(title)
+        if suggested:
+            ensure_saved_choice(title, suggested)
+            # Rehydrate on every visit; callbacks write every edit immediately.
+            if select_key not in st.session_state:
+                st.session_state[select_key] = st.session_state[saved_selected_key(title)]
+            if cut_key not in st.session_state:
+                st.session_state[cut_key] = min(spent, max(0, int(st.session_state[saved_amount_key(title)])))
         left, mid, right = st.columns([2.7, 1.3, 2.0], vertical_alignment="center")
         with left:
-            active = st.checkbox(title, key=select_key, disabled=suggested == 0,
-                on_change=remember_spending_choice, args=(title, suggested))
+            if suggested:
+                active = st.checkbox(title, key=select_key, on_change=store_choice, args=(title,))
+            else:
+                st.checkbox(title, key=f"disabled_{case}_{title}", value=False, disabled=True)
+                active = False
         with mid:
             st.write(money(spent))
         with right:
             if active and suggested:
                 amount_col, all_col = st.columns([3, 1], vertical_alignment="center")
                 with amount_col:
-                    change = st.number_input(f"Spend less on {title}", min_value=0, max_value=spent,
+                    st.number_input(f"Spend less on {title}", min_value=0, max_value=spent,
                         step=10, label_visibility="collapsed", key=cut_key,
-                        on_change=remember_spending_amount, args=(title, suggested))
+                        on_change=store_choice, args=(title,))
                 with all_col:
                     st.button("All", key=f"all_{case}_{title}",
                         help=f"Stop all {money(spent)} of {title.lower()} spending each month",
                         on_click=set_full_spending_cut, args=(title, spent),
                         use_container_width=True)
-                saved += change
             elif suggested:
                 st.caption(f"Try {money(suggested)}")
             else:
                 st.caption("Essential / review first")
-        # Persist selected state AND amount on every render; this is the durable
-        # source for the future screen, even after widgets are removed.
-        if suggested:
-            spending_plan[title] = {
-                "selected": bool(st.session_state[select_key]),
-                "amount": int(st.session_state.get(cut_key, prior.get("amount", suggested))),
-            }
+    saved = total_selected_cuts()
     left, right = st.columns(2)
     left.metric("Spend less each month", money(saved))
     still = max(0, monthly_shortfall - saved)
@@ -321,12 +326,7 @@ elif section == "See my future":
     st.markdown(f"**You spend {money(monthly_shortfall)} more than you earn each month. Where will you get the money?**")
 
     # Project both paths automatically. Selections are tentative plans, not verified savings.
-    spending_plan = plan_for_case()
-    potential = sum(
-        spending_plan.get(label, {}).get("amount", suggestion)
-        for label, _, suggestion in CATEGORIES
-        if spending_plan.get(label, {}).get("selected", False)
-    )
+    potential = total_selected_cuts()
     without_gap = monthly_shortfall
     with_gap = max(0, monthly_shortfall - potential)
     st.markdown(
