@@ -108,13 +108,17 @@ def open_section(destination):
 
 # Show one section at a time. This is navigation, not a pile of expanded panels.
 sections = ["Today", "Spend less", "See my future"] if case == "1" else ["Today", "Get help"]
+# Session state can be absent after Streamlit/browser resets or widget cleanup.
+# Default safely instead of crashing when rendering navigation.
+if st.session_state.get("section") not in sections:
+    st.session_state["section"] = "Today"
 nav_columns = st.columns(len(sections), gap="small")
 for nav_column, nav_section in zip(nav_columns, sections):
     with nav_column:
         st.button(nav_section, key=f"nav_{nav_section}", use_container_width=True,
-                  type="primary" if st.session_state["section"] == nav_section else "secondary",
+                  type="primary" if st.session_state.get("section", "Today") == nav_section else "secondary",
                   on_click=open_section, args=(nav_section,))
-section = st.session_state["section"]
+section = st.session_state.get("section", "Today")
 
 if section == "Today":
     st.subheader("Where do I stand?")
