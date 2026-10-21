@@ -71,6 +71,11 @@ outgoing = float(bills + card + s["annual"])
 remaining_cash = float(cash + income) - outgoing
 monthly_shortfall = max(0, outgoing - float(income)) if case == "1" else 0
 
+# Streamlit forbids changing a widget's session-state key after that widget
+# has been created in the same run. Button callbacks run before the next render.
+def open_section(destination):
+    st.session_state["section"] = destination
+
 # Show one section at a time. This is navigation, not a pile of expanded panels.
 sections = ["Today", "Spend less", "See my future"] if case == "1" else ["Today", "Get help"]
 st.radio("What would you like to see?", sections, horizontal=True, key="section", label_visibility="collapsed")
@@ -98,9 +103,8 @@ if section == "Today":
     st.subheader("② What do I need to do today?")
     if case == "1" and monthly_shortfall:
         st.markdown(f"**Find a way to spend {money(monthly_shortfall)} less each month.**")
-        if st.button(f"Help me find {money(monthly_shortfall)}", use_container_width=True):
-            st.session_state["section"] = "Spend less"
-            st.rerun()
+        st.button(f"Help me find {money(monthly_shortfall)}", use_container_width=True,
+                  on_click=open_section, args=("Spend less",))
     elif remaining_cash < 0:
         st.write(f"**Find a way to cover {money(abs(remaining_cash))} before your bills are due.**")
     elif case == "4":
@@ -110,9 +114,8 @@ if section == "Today":
     if case == "1" and monthly_shortfall:
         st.subheader("③ What happens if I do nothing?")
         st.write("**Your available money will fall or your debt will rise.**")
-        if st.button("Show me my future", use_container_width=True):
-            st.session_state["section"] = "See my future"
-            st.rerun()
+        st.button("Show me my future", use_container_width=True,
+                  on_click=open_section, args=("See my future",))
     with st.expander("Show the numbers"):
         rows = [("Money in your account", money(cash), False),
                 ("Income expected", "+ " + money(income), False),
@@ -172,9 +175,8 @@ elif section == "Spend less":
                     st.write("**Where will you get the money to repay it?**")
     else:
         st.success("**Your choices could cover the monthly difference. Now you must follow through.**")
-    if st.button("Show what my choices do to my future", use_container_width=True):
-        st.session_state["section"] = "See my future"
-        st.rerun()
+    st.button("Show what my choices do to my future", use_container_width=True,
+              on_click=open_section, args=("See my future",))
 
 elif section == "See my future":
     st.subheader("🔴 SHOW ME THE MONEY!")
@@ -226,9 +228,8 @@ elif section == "See my future":
             else:
                 st.info("Pick one expense to stop or reduce this week, then check whether you followed through.")
     st.caption("You don't know what someone else can afford. Live according to your numbers, not their appearance.")
-    if st.button("Go back to ways to spend less", use_container_width=True):
-        st.session_state["section"] = "Spend less"
-        st.rerun()
+    st.button("Go back to ways to spend less", use_container_width=True,
+              on_click=open_section, args=("Spend less",))
 
 else:
     st.subheader("Get help")
