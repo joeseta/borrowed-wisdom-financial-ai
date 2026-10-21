@@ -74,80 +74,94 @@ if st.session_state['plan']:
 
 st.markdown('#### ① Where do I stand?')
 if expected < 0:
-    st.error(f'🔴 **Action needed: ${abs(expected):,.0f} projected shortfall**')
-    st.write(f'Based on this example, **{s["name"]}** may be **${abs(expected):,.0f} short** after the listed upcoming payments.')
+    st.error(f'🔴 **You may be ${abs(expected):,.0f} short for your upcoming bills.**')
 elif key == '1' and monthly_gap > 0:
-    st.warning(f'🟡 **Bills covered for now — but spending exceeds income by ${monthly_gap:,.0f}**')
-    st.write(f'You may have **${expected:,.0f} left** after these payments, but you are using existing cash to make up the difference.')
+    st.warning(f'🟡 **You’re spending ${monthly_gap:,.0f} more than you earn each month.**')
 elif expected < 250:
-    st.warning(f'🟡 **Very little room left: ${expected:,.0f}**')
-    st.write('The listed bills appear covered, but there is very little money left for surprises.')
+    st.warning(f'🟡 **You may have only ${expected:,.0f} left after your bills.**')
 else:
-    st.success(f'🟢 **Listed bills covered • ${expected:,.0f} remaining**')
-    st.write('No immediate shortfall is projected from the information entered in this example.')
-
-st.markdown(f'**Next significant obligation:** {s["label"]} — approximately ${s["big_bill"]:,.0f}, in {s["deadline"]} days.')
+    st.success(f'🟢 **Your listed bills appear covered. ${expected:,.0f} left.**')
 
 if key == '1':
     st.markdown('##### Money coming in vs. money going out')
-    st.caption('Illustrative monthly comparison based on the entered amounts.')
-    # Native HTML keeps the two bars close together without additional packages.
     ceiling = max(float(money_in), outflow, 1.0)
     income_height = max(3, round(float(money_in) / ceiling * 190))
     spend_height = max(3, round(outflow / ceiling * 190))
+    # Two labeled bars; no chart library needed.
     st.markdown(f"""
-    <div style="max-width:440px;margin:6px auto 10px auto;">
-      <div style="display:flex;align-items:flex-end;justify-content:center;gap:22px;height:230px;border-bottom:1px solid #cbd5e1;">
+    <div style="max-width:440px;margin:8px auto 16px auto;">
+      <div style="display:flex;align-items:flex-end;justify-content:center;gap:18px;height:225px;border-bottom:1px solid #cbd5e1;">
         <div style="width:42%;text-align:center;">
           <div style="font-size:18px;font-weight:700;color:#137b3c;">${money_in:,.0f}</div>
-          <div style="height:{income_height}px;background:linear-gradient(#47d36b,#169a4a);border-radius:10px 10px 0 0;"></div>
+          <div style="height:{income_height}px;background:linear-gradient(#47d36b,#169a4a);border-radius:9px 9px 0 0;"></div>
         </div>
         <div style="width:42%;text-align:center;">
           <div style="font-size:18px;font-weight:700;color:#bd2127;">${outflow:,.0f}</div>
-          <div style="height:{spend_height}px;background:linear-gradient(#ff6565,#d71925);border-radius:10px 10px 0 0;"></div>
+          <div style="height:{spend_height}px;background:linear-gradient(#ff6565,#d71925);border-radius:9px 9px 0 0;"></div>
         </div>
       </div>
-      <div style="display:flex;justify-content:center;gap:22px;padding-top:8px;text-align:center;font-size:14px;font-weight:600;">
+      <div style="display:flex;justify-content:center;gap:18px;padding-top:9px;text-align:center;font-size:14px;font-weight:600;">
         <div style="width:42%;">Money coming in</div><div style="width:42%;">Money going out</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
-    if monthly_gap > 0:
-        st.warning(f'**${monthly_gap:,.0f} more going out than coming in** in this example. If this repeats, available cash will fall.')
-    else:
-        st.success(f'Income covers these modeled monthly expenses by ${-monthly_gap:,.0f}.')
 
-with st.expander('Show the simple math'):
-    st.markdown('**Can I cover the listed upcoming payments?**')
+with st.expander('Show the numbers'):
+    st.markdown('**Money available for upcoming bills**')
     rows = [
-        ('Money in my account today', f'${cash:,.0f}'),
-        ('Expected money coming in', f'+ ${money_in:,.0f}'),
-        ('**Total available**', f'**${float(cash)+float(money_in):,.0f}**'),
-        ('Upcoming bills', f'− ${bills:,.0f}'),
+        ('Money in your account', f'${cash:,.0f}', False),
+        ('Expected income', f'+ ${money_in:,.0f}', False),
+        ('Total available', f'${float(cash)+float(money_in):,.0f}', True),
+        ('Upcoming bills', f'− ${bills:,.0f}', False),
     ]
     if annual_due:
-        rows.append(('Annual insurance renewal (additional)', f'− ${annual_due:,.0f}'))
-    rows.append(('Credit-card payments', f'− ${cards:,.0f}'))
+        rows.append(('Annual insurance bill', f'− ${annual_due:,.0f}', False))
+    rows.append(('Credit card payment', f'− ${cards:,.0f}', False))
     if st.session_state['extra']:
-        rows.append(('Additional money received', f'+ ${st.session_state["extra"]:,.0f}'))
-    rows.append(('**Estimated money remaining**', f'**${expected:,.0f}**'))
-    for label, amount in rows:
-        c1, c2 = st.columns([3, 1])
-        c1.markdown(label)
-        c2.markdown(amount)
-    st.caption('Estimated figures only. Expected income is not confirmed cash. Timing and omitted transactions may change the result.')
+        rows.append(('Extra money received', f'+ ${st.session_state["extra"]:,.0f}', False))
+    rows.append(('Money left after payments', f'${expected:,.0f}', True))
+    # A real HTML table fixes alignment on phones and avoids extra markdown bullets.
+    tr = ''.join(
+        f'<tr style="border-bottom:1px solid #e5e7eb;{("font-weight:700;background:#f8fafc;" if bold else "")}">'
+        f'<td style="padding:10px 8px;">{escape(label)}</td>'
+        f'<td style="padding:10px 8px;text-align:right;white-space:nowrap;">{escape(amount)}</td></tr>'
+        for label, amount, bold in rows
+    )
+    st.markdown('<table style="width:100%;border-collapse:collapse;font-size:16px;">'+tr+'</table>',unsafe_allow_html=True)
+    st.caption('Estimate only. Expected income must arrive before these bills are due. Other transactions may change the result.')
 
 st.markdown('#### ② What do I need to do today?')
-st.write('**What caused this?** ' + s['cause'])
-st.caption(s['detail'])
-if expected<0:
-    st.write('**If nothing changes:** You may not be able to cover the listed payments on time. Depending on the bill, late fees, added interest or interruption of a service could follow.')
-elif key == '1' and monthly_gap > 0:
-    st.write(f'**If nothing changes:** The projected ${monthly_gap:,.0f} monthly gap can gradually use up available cash. Check your expenses before the next payment cycle.')
+if key == '1' and monthly_gap > 0:
+    st.write(f'**Find ways to close your ${monthly_gap:,.0f} monthly gap.**')
+    if st.button(f'Help me find ${monthly_gap:,.0f}', use_container_width=True):
+        st.session_state['finder'] = not st.session_state.get('finder', False)
+    if st.session_state.get('finder', False):
+        st.write('How much could you cut from your monthly spending?')
+        cut = st.number_input('Monthly spending you could reduce ($)', min_value=0, max_value=1000000, value=0, step=25, key='proposed_cut_'+key)
+        remaining = max(0, monthly_gap - cut)
+        if remaining:
+            st.info(f'You would still need to find ${remaining:,.0f} each month.')
+        else:
+            st.success('Your proposed cuts would cover the monthly gap, if you can keep them up.')
+        st.caption('This is a plan, not money saved yet. We have not checked your actual purchases.')
+elif expected < 0:
+    st.write(f'**Find a way to cover the ${abs(expected):,.0f} shortfall before your next bill is due.**')
+elif key == '4':
+    st.write(f'**Set aside ${annual_due:,.0f} for your annual insurance bill.**')
+elif key == '5':
+    st.write('**Check that your next bill is paid.**')
 else:
-    st.write('**What happens next:** Keep enough money available for these bills and confirm they are paid. New spending or missing deposits could change the picture.')
-for i, action in enumerate(s['actions'][:3], 1):
-    st.write(f'**{i}.** {action}')
+    st.write(f'**Check your next payment: {s["label"].lower()}.**')
+
+st.markdown('#### ③ What happens if I do nothing?')
+if key == '1' and monthly_gap > 0:
+    st.write('You’ll keep using up your money. Eventually, you may not have enough to pay your bills.')
+elif expected < 0:
+    st.write('You may miss a payment. Depending on the bill, you could face fees, extra interest, or a service interruption.')
+elif key == '5':
+    st.write('If the payment does not go through, the bill will still be unpaid.')
+else:
+    st.write('A missed payment could cost you more. Check the due date and make sure the money is there.')
 
 st.markdown('#### ③ What happens now?')
 a,b=st.columns(2)
