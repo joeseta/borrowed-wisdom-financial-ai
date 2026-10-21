@@ -30,19 +30,28 @@ def numbers_table(rows):
     )
     st.markdown('<table style="width:100%;border-collapse:collapse;font-size:16px">'+body+'</table>', unsafe_allow_html=True)
 
-def bar_chart(series, labels, color, ymax=None):
-    ymax = max(ymax or 0, max(series), 1)
-    cells = []
-    for value, label in zip(series, labels):
-        h = max(2, int(max(0, value) / ymax * 174)) if value > 0 else 0
-        cells.append(
-            f'<div style="flex:1;min-width:0;text-align:center">'
-            f'<div style="font-size:clamp(12px,2.7vw,18px);font-weight:800;color:{color}">{money(value)}</div>'
-            f'<div style="height:185px;display:flex;align-items:flex-end;justify-content:center">'
-            f'<div style="width:70%;max-width:90px;height:{h}px;background:{color};border-radius:8px 8px 0 0"></div></div>'
-            f'<div style="font-size:13px;font-weight:600;margin-top:10px">{label}</div></div>'
-        )
-    st.markdown('<div style="display:flex;gap:10px;border-bottom:1px solid #cbd5e1;padding-bottom:9px">'+"".join(cells)+'</div>', unsafe_allow_html=True)
+def compare_bars(original, changed, labels, unit="savings"):
+    """Two comparable outcomes on one scale. Values are nonnegative balances."""
+    maximum = max([*original, *changed, 1])
+    bg_a = "#dc2626" if unit == "debt" else "#9ca3af"
+    bg_b = "#15803d"
+    cards = []
+    for old, new, label in zip(original, changed, labels):
+        def bar(value, color):
+            height = max(3, round(value / maximum * 145)) if value > 0 else 0
+            return (f'<div style="width:48%;text-align:center">'
+                    f'<div style="font-size:clamp(11px,2vw,15px);font-weight:700;color:{color};white-space:nowrap">{money(value)}</div>'
+                    f'<div style="height:155px;display:flex;align-items:flex-end;justify-content:center">'
+                    f'<div style="height:{height}px;width:86%;background:{color};border-radius:5px 5px 0 0"></div></div></div>')
+        cards.append('<div style="flex:1;min-width:0;text-align:center">'
+                     '<div style="display:flex;gap:4px;align-items:end">'+bar(old,bg_a)+bar(new,bg_b)+'</div>'
+                     f'<div style="font-size:13px;font-weight:650;margin-top:8px">{label}</div></div>')
+    st.markdown('<div style="display:flex;gap:16px;margin:12px 0;border-bottom:1px solid #cbd5e1;padding-bottom:9px">'
+                + ''.join(cards) + '</div>', unsafe_allow_html=True)
+    a_label = "No changes"; b_label = "With your selected cuts"
+    st.markdown(f'<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:0 0 15px">'
+                f'<span><b style="color:{bg_a}">■</b> {a_label}</span>'
+                f'<span><b style="color:{bg_b}">■</b> {b_label}</span></div>', unsafe_allow_html=True)
 
 st.title("🧭 Borrowed Wisdom")
 st.caption("What do I need to do today? · Fictional financial examples")
@@ -180,42 +189,55 @@ elif section == "Spend less":
 
 elif section == "See my future":
     st.subheader("🔴 SHOW ME THE MONEY!")
-    st.markdown(f"**You're spending {money(monthly_shortfall)} more than you earn each month. Where will you get the money?**")
-    # Reductions can be considered in the projection, but are NOT counted as verified.
-    potential = sum(st.session_state.get(f"cut_{case}_{label}", suggestion)
+    st.markdown(f"**You spend {money(monthly_shortfall)} more than you earn each month. Where will you get the money?**")
+
+    # Project both paths automatically. Selections are tentative plans, not verified savings.
+    potential = sum(
+        st.session_state.get(f"cut_{case}_{label}", suggestion)
         for label, _, suggestion in CATEGORIES
-        if st.session_state.get(f"select_{case}_{label}", False))
-    if potential:
-        use_cuts = st.checkbox(f"What if I make the {money(potential)} in spending cuts I selected?", value=False)
-    else:
-        use_cuts = False
-    gap = max(0, monthly_shortfall - (potential if use_cuts else 0))
+        if st.session_state.get(f"select_{case}_{label}", False)
+    )
+    without_gap = monthly_shortfall
+    with_gap = max(0, monthly_shortfall - potential)
+    st.markdown(f"**No changes:** {money(without_gap)} short each month.  \n"
+                f"**With your selected cuts:** {money(with_gap)} short each month.")
+
     funding = st.radio("How are you covering the extra spending?", ["Using savings", "Using a credit card"], horizontal=True)
-    months = [0,3,6,12]
+    months = [0, 3, 6, 12]
     labels = ["Today", "3 months", "6 months", "12 months"]
     if funding == "Using savings":
         savings = st.number_input("Savings available ($)", min_value=0, max_value=1000000, value=10000, step=100)
-        balances = [max(0, savings - gap * month) for month in months]
-        st.markdown("**Your savings**")
-        bar_chart(balances, labels, "#16a34a", ymax=max(savings, 1))
-        if gap:
-            st.error(f"**Your savings run out in about {ceil(savings / gap) if savings else 0} months at this rate. Where will you get the money then?**")
-        else:
-            st.success("**Your selected cuts could stop the loss of savings, if you follow through.**")
-        st.caption("Illustration assumes the same income and spending, without interest earned. It does not account for other uses of savings.")
+        no_change = [max(0, savings - without_gap * m) for m in months]
+        with_change = [max(0, savings - with_gap * m) for m in months]
+        st.markdown("**How much savings will be left?**")
+        compare_bars(no_change, with_change, labels, "savings")
+        if without_gap > 0:
+            when = ceil(savings / without_gap) if savings else 0
+            st.error(f"**If nothing changes, your {money(savings)} savings run out in about {when} months.**")
+        if potential:
+            st.success(f"**If you make your selected cuts, you could have {money(with_change[-1])} left after 12 months.**")
+        if with_gap > 0 and savings - with_gap * 12 < 0:
+            st.warning("Your selected cuts would still use up your savings within 12 months.")
+        st.caption("Example assumes the same income and expenses each month and no interest on savings. Bars stop at $0; a further shortage would need another source of money. Your cuts must actually happen.")
     else:
-        rate = APR / 12
-        balance = 0.0
-        owed_by_month = {0:0.0}
-        for m in range(1, 13):
-            balance = balance * (1 + rate) + gap
-            if m in months: owed_by_month[m] = balance
-        owed = [owed_by_month[m] for m in months]
-        st.markdown("**Your debt including interest**")
-        bar_chart(owed, labels, "#dc2626")
-        st.write(f"**After 12 months:** You borrowed {money(gap*12)}. You could owe **{money(owed[-1])}**.")
-        st.error(f"**Where will you get {money(owed[-1])} to pay it back?**")
-        st.caption("Example uses 25% yearly interest, compounded monthly, with $0 repayments or fees and borrowing at each month-end. Real credit cards require minimum payments.")
+        def projected_debt(gap):
+            balance = 0.0
+            results = [0.0]
+            for m in range(1, 13):
+                balance = balance * (1 + APR / 12) + gap
+                if m in (3, 6, 12):
+                    results.append(balance)
+            return results
+        no_change = projected_debt(without_gap)
+        with_change = projected_debt(with_gap)
+        st.markdown("**How much could you owe?**")
+        compare_bars(no_change, with_change, labels, "debt")
+        st.error(f"**After 12 months: Without changes, you could owe {money(no_change[-1])}.**")
+        if potential:
+            st.success(f"**With your selected cuts, you could owe {money(with_change[-1])}.**")
+        st.markdown("**Where will you get the money to pay it back?**")
+        st.caption("Example: 25% yearly credit-card interest, compounded monthly; the remaining shortage is borrowed at each month-end, with no repayments or extra fees. Real cards require minimum payments. Your cuts must actually happen.")
+
     with st.expander("What's making it hard to spend less?"):
         reason = st.radio("Choose what fits", ["My friends go out and I don't want to miss out.",
             "I enjoy shopping or eating out.", "I'm too tired or busy.",
