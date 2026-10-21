@@ -4,6 +4,27 @@ from math import ceil
 
 st.set_page_config(page_title="Borrowed Wisdom — What do I need to do today?", page_icon="🧭", layout="centered")
 
+# One consistent visual language: type, spacing, headings, and unmistakable controls.
+st.markdown("""<style>
+:root { --bw-ink:#14263e; --bw-blue:#174f95; --bw-blue-pale:#e9f1fc; }
+[data-testid="stAppViewContainer"] { font-family: Arial, Helvetica, sans-serif; color:var(--bw-ink); }
+.block-container {max-width:810px; padding-top:2.2rem; padding-bottom:3rem;}
+h1,h2,h3,p,div,span,label,button {font-family:Arial,Helvetica,sans-serif;}
+h1 {font-size:2rem !important; font-weight:750 !important; letter-spacing:-.035em;}
+h2,h3 {font-size:1.3rem !important; font-weight:750 !important; letter-spacing:-.02em;}
+[data-testid="stCaptionContainer"] p {font-size:.81rem;color:#697789;}
+/* Distinct, consistent click surfaces rather than text disguised as controls. */
+.stButton > button {min-height:48px !important; border-radius:10px !important;
+   border:2px solid #174f95 !important; color:#174f95 !important;
+   background:#e9f1fc !important; font-size:1rem !important;font-weight:750 !important;}
+.stButton > button:hover {background:#d6e8ff !important; color:#123d75 !important;}
+.stButton > button[kind="primary"] {color:white !important; background:#174f95 !important;}
+.stButton > button[kind="primary"]:hover {background:#103969 !important;}
+[data-testid="stExpander"] {border:1px solid #c8d7e7 !important;border-radius:9px !important;}
+[data-testid="stExpander"] summary {background:#eef4fc; font-weight:700; color:#174f95;}
+@media(max-width:600px){.block-container{padding:1rem 1rem 2rem;}h1{font-size:1.7rem !important;}}
+</style>""", unsafe_allow_html=True)
+
 SCENARIOS = {
     "1 · Spending more than income": dict(cash=1350, income=1800, bills=2150, card=620, annual=0, description="Monthly spending is higher than monthly income."),
     "2 · Large unexpected bill": dict(cash=900, income=950, bills=2050, card=200, annual=0, description="An unexpected car repair added $1,400 to upcoming bills."),
@@ -33,8 +54,8 @@ def numbers_table(rows):
 def compare_bars(original, changed, labels, unit="savings"):
     """Two comparable outcomes on one scale. Values are nonnegative balances."""
     maximum = max([*original, *changed, 1])
-    bg_a = "#dc2626" if unit == "debt" else "#9ca3af"
-    bg_b = "#15803d"
+    bg_a = "#c52332" if unit == "debt" else "#c52332"
+    bg_b = "#168a50"
     cards = []
     for old, new, label in zip(original, changed, labels):
         def bar(value, color):
@@ -54,7 +75,7 @@ def compare_bars(original, changed, labels, unit="savings"):
                 f'<span><b style="color:{bg_b}">■</b> {b_label}</span></div>', unsafe_allow_html=True)
 
 st.title("🧭 Borrowed Wisdom")
-st.caption("What do I need to do today? · Fictional financial examples")
+st.caption("What do I need to do today?  |  Fictional examples")
 scenario = st.selectbox("Choose a situation to test", list(SCENARIOS))
 s = SCENARIOS[scenario]
 case = scenario[0]
@@ -87,11 +108,16 @@ def open_section(destination):
 
 # Show one section at a time. This is navigation, not a pile of expanded panels.
 sections = ["Today", "Spend less", "See my future"] if case == "1" else ["Today", "Get help"]
-st.radio("What would you like to see?", sections, horizontal=True, key="section", label_visibility="collapsed")
+nav_columns = st.columns(len(sections), gap="small")
+for nav_column, nav_section in zip(nav_columns, sections):
+    with nav_column:
+        st.button(nav_section, key=f"nav_{nav_section}", use_container_width=True,
+                  type="primary" if st.session_state["section"] == nav_section else "secondary",
+                  on_click=open_section, args=(nav_section,))
 section = st.session_state["section"]
 
 if section == "Today":
-    st.subheader("① Where do I stand?")
+    st.subheader("Where do I stand?")
     if case == "1" and monthly_shortfall:
         st.error(f"**You're spending {money(monthly_shortfall)} more than you earn each month.**")
         st.markdown("**Money coming in vs. money going out**")
@@ -109,10 +135,10 @@ if section == "Today":
         st.error(f"**You may be {money(abs(remaining_cash))} short for upcoming payments.**")
     else:
         st.success(f"**Your listed bills appear covered. {money(remaining_cash)} left.**")
-    st.subheader("② What do I need to do today?")
+    st.subheader("What do I need to do today?")
     if case == "1" and monthly_shortfall:
         st.markdown(f"**Find a way to spend {money(monthly_shortfall)} less each month.**")
-        st.button(f"Help me find {money(monthly_shortfall)}", use_container_width=True,
+        st.button(f"Help me find {money(monthly_shortfall)}  →", type="primary", use_container_width=True,
                   on_click=open_section, args=("Spend less",))
     elif remaining_cash < 0:
         st.write(f"**Find a way to cover {money(abs(remaining_cash))} before your bills are due.**")
@@ -121,9 +147,9 @@ if section == "Today":
     else:
         st.write("**Check that your next bill is paid.**")
     if case == "1" and monthly_shortfall:
-        st.subheader("③ What happens if I do nothing?")
+        st.subheader("What happens if I do nothing?")
         st.write("**Your available money will fall or your debt will rise.**")
-        st.button("Show me my future", use_container_width=True,
+        st.button("Show me my future  →", type="primary", use_container_width=True,
                   on_click=open_section, args=("See my future",))
     with st.expander("Show the numbers"):
         rows = [("Money in your account", money(cash), False),
@@ -184,11 +210,11 @@ elif section == "Spend less":
                     st.write("**Where will you get the money to repay it?**")
     else:
         st.success("**Your choices could cover the monthly difference. Now you must follow through.**")
-    st.button("Show what my choices do to my future", use_container_width=True,
+    st.button("Show what my choices do to my future  →", type="primary", use_container_width=True,
               on_click=open_section, args=("See my future",))
 
 elif section == "See my future":
-    st.subheader("🔴 SHOW ME THE MONEY!")
+    st.subheader("SHOW ME THE MONEY!")
     st.markdown(f"**You spend {money(monthly_shortfall)} more than you earn each month. Where will you get the money?**")
 
     # Project both paths automatically. Selections are tentative plans, not verified savings.
@@ -199,8 +225,13 @@ elif section == "See my future":
     )
     without_gap = monthly_shortfall
     with_gap = max(0, monthly_shortfall - potential)
-    st.markdown(f"**No changes:** {money(without_gap)} short each month.  \n"
-                f"**With your selected cuts:** {money(with_gap)} short each month.")
+    st.markdown(
+        f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0 18px">'
+        f'<div style="flex:1;min-width:195px;border-left:5px solid #c52332;background:#fff1f2;padding:13px;border-radius:7px">'
+        f'<div style="font-size:14px;font-weight:700">No changes</div><div style="font-size:23px;font-weight:800;color:#aa202b">{money(without_gap)} / month</div></div>'
+        f'<div style="flex:1;min-width:195px;border-left:5px solid #168a50;background:#eefaf2;padding:13px;border-radius:7px">'
+        f'<div style="font-size:14px;font-weight:700">With your selected cuts</div><div style="font-size:23px;font-weight:800;color:#127846">{money(with_gap)} / month</div></div></div>',
+        unsafe_allow_html=True)
 
     funding = st.radio("How are you covering the extra spending?", ["Using savings", "Using a credit card"], horizontal=True)
     months = [0, 3, 6, 12]
@@ -250,7 +281,7 @@ elif section == "See my future":
             else:
                 st.info("Pick one expense to stop or reduce this week, then check whether you followed through.")
     st.caption("You don't know what someone else can afford. Live according to your numbers, not their appearance.")
-    st.button("Go back to ways to spend less", use_container_width=True,
+    st.button("← Go back to ways to spend less", type="primary", use_container_width=True,
               on_click=open_section, args=("Spend less",))
 
 else:
