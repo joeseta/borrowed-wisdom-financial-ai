@@ -194,22 +194,29 @@ if key == '1' and monthly_gap > 0:
             if st.button('I cannot spend less. Show other options', key=f'other_{key}'):
                 st.session_state['show_other_options'] = True
             if st.session_state.get('show_other_options', False):
-                st.markdown('##### What else can I do?')
-                st.write('**Earn more:** Extra work takes time. Only count income you can rely on.')
-                st.write('**Ask for assistance or a payment arrangement:** Some bills may have hardship options. Check before missing a payment.')
-                st.write('**Borrowing:** Borrowed money must be paid back. It does not fix a monthly spending problem.')
-                st.markdown('**Example: Borrowing the amount you still need, one time**')
-                st.caption('Illustrations, not actual offers. Rates, fees and repayment times vary. A loan needs a realistic repayment plan.')
-                examples = [
-                    ('Family / friend — no interest assumed', 0.0, 'May put relationships under pressure.'),
-                    ('Credit union — 12% APR, 30 days', remaining * 0.12 * 30 / 365, 'Approval and terms vary.'),
-                    ('Credit card — 25% APR, 30 days', remaining * 0.25 * 30 / 365, 'Cash advances may cost more and have extra fees.'),
-                    ('Payday loan — $15 per $100, 14 days', remaining * 0.15, 'High cost; repayment may be due very soon.'),
-                ]
-                for name, cost, note in examples:
-                    st.write(f'**{name}** — about **${cost:,.2f}** in cost; repay **${remaining+cost:,.2f}**. {note}')
-                st.error(f'**Important:** Borrowing ${remaining:,.0f} once does not remove the ${remaining:,.0f} monthly problem.')
-                st.write('**Before borrowing: How will you pay it back?**')
+                st.markdown('##### If spending less is not enough')
+                st.write('**Earn more:** More work means less free time. Count only income you can rely on.')
+                st.write('**Ask for help:** Contact a bill provider about a payment plan or hardship assistance before a bill is late.')
+                st.write('**Borrow:** You must repay it. Borrowing once does not fix a monthly shortage.')
+                with st.expander('Compare the cost of borrowing — only if you need it'):
+                    st.caption('Example costs for borrowing the remaining amount just once. Actual terms vary.')
+                    examples = [
+                        ('Family / friend', 0.0, 'May strain relationships.'),
+                        ('Credit union loan (12% APR, 30 days)', remaining * 0.12 * 30 / 365, 'Approval and terms vary.'),
+                        ('Credit card (25% APR, 30 days)', remaining * 0.25 * 30 / 365, 'Cash advances can cost more.'),
+                        ('Payday loan ($15 per $100, 14 days)', remaining * 0.15, 'High cost and rapid repayment.'),
+                    ]
+                    table_rows = ''.join(
+                        f'<tr><td style="padding:8px;border-bottom:1px solid #ddd">{escape(name)}</td>'
+                        f'<td style="padding:8px;text-align:right;border-bottom:1px solid #ddd">${remaining+cost:,.2f}</td></tr>'
+                        for name,cost,_ in examples
+                    )
+                    st.markdown('<table style="width:100%;border-collapse:collapse"><thead><tr>'
+                                '<th style="text-align:left">Where from</th><th style="text-align:right">Repay</th>'
+                                '</tr></thead><tbody>'+table_rows+'</tbody></table>',unsafe_allow_html=True)
+                    st.caption('Family loans can affect relationships. Payday loans can create expensive repeat borrowing.')
+                    st.error(f'**Borrowing ${remaining:,.0f} today leaves you ${remaining:,.0f} short again next month if nothing changes.**')
+                    st.write('**Where will you get the money to repay it?**')
         else:
             st.success('**Your choices could cover the monthly difference.** Next, put the changes into action.')
         st.caption('These are possible changes, not confirmed savings. We have not connected bank or card transactions.')
@@ -222,112 +229,98 @@ elif key == '5':
 else:
     st.write(f'**Check your next payment: {s["label"].lower()}.**')
 
-st.markdown('#### ③ What happens if I do nothing?')
+# Simple financial crystal ball: compare the same four dates in every view.
+# This is a cash-flow illustration, never a forecast of contractual card payments.
 if key == '1' and monthly_gap > 0:
-    st.write('Your savings will fall, or your debt will grow. You cannot keep spending more than you earn.')
-elif expected < 0:
-    st.write('You may miss a payment. Depending on the bill, you could face fees, extra interest, or a service interruption.')
-elif key == '5':
-    st.write('If the payment does not go through, the bill will still be unpaid.')
-else:
-    st.write('A missed payment could cost you more. Check the due date and make sure the money is there.')
-
-# Show the future for the recurring shortfall case. These are illustrative projections,
-# not a prediction of an actual person's account balances or contractual debt.
-if key == '1' and monthly_gap > 0:
-    st.markdown('#### 🔮 Your financial future')
-    st.markdown(f'**You are spending ${monthly_gap:,.0f} more than you earn each month. Where will you get the money?**')
-    view = st.radio('How are you paying for the extra spending?',
-                    ['Borrowing on a credit card', 'Using savings'],
-                    horizontal=True, key='projection_view')
-    use_plan = st.checkbox('Show what happens if I make the spending cuts I selected',
-                           value=False, key='projection_apply_plan')
-    savings_applied = float(selected_total) if use_plan and st.session_state.get('finder', False) else 0.0
-    ongoing_shortfall = max(0.0, monthly_gap - savings_applied)
-    if use_plan and savings_applied == 0:
-        st.caption('Select spending cuts above to see how they change your future.')
-    st.markdown(f'**Monthly amount you still need: ${ongoing_shortfall:,.0f}**')
-    months = [0, 3, 6, 9, 12, 24]
-    if view == 'Borrowing on a credit card':
-        apr_pct = st.number_input('Credit card yearly interest rate (%)',
-                                 min_value=0.0, max_value=100.0, value=25.0, step=0.5,
-                                 key='projection_apr')
-        monthly_rate = apr_pct / 1200.0
-        debt = 0.0
-        with_interest = {0: 0.0}
-        for month in range(1, 25):
-            debt = debt * (1.0 + monthly_rate) + ongoing_shortfall
-            if month in months:
-                with_interest[month] = debt
-        proj = pd.DataFrame({
-            'Month': months,
-            'Borrowed without interest': [ongoing_shortfall * m for m in months],
-            'Debt including interest': [with_interest[m] for m in months],
-        })
-        st.line_chart(proj.set_index('Month'), x_label='Months from today', y_label='Debt ($)',
-                      color=['#929aa5', '#c42631'], height=250)
-        rows = ''.join(
-            '<tr style="border-bottom:1px solid #e5e7eb">'
-            f'<td style="padding:10px 6px">{m} months</td>'
-            f'<td style="padding:10px 6px;text-align:right">${ongoing_shortfall * m:,.0f}</td>'
-            f'<td style="padding:10px 6px;text-align:right;color:#b91c1c;font-weight:750">${with_interest[m]:,.0f}</td></tr>'
-            for m in months
-        )
-        st.markdown(
-            '<table style="width:100%;border-collapse:collapse;font-size:15px">'
-            '<thead><tr style="background:#f3f4f6">'
-            '<th style="padding:10px 6px;text-align:left">When</th>'
-            '<th style="padding:10px 6px;text-align:right">Extra money borrowed</th>'
-            '<th style="padding:10px 6px;text-align:right">Total owed with interest</th>'
-            '</tr></thead><tbody>' + rows + '</tbody></table>', unsafe_allow_html=True)
-        st.error(f'**SHOW ME THE MONEY!** In 12 months, you could owe **${with_interest[12]:,.0f}** from this spending alone. How will you pay it back?')
-        st.caption('Example only: each month’s shortage is charged at the end of that month; interest compounds monthly at the rate shown; no fees and no payments. Real cards require minimum payments, and actual interest and fees differ. This is not a workable repayment plan.')
-    else:
-        starting_savings = st.number_input('Savings available to cover this spending ($)',
-                                           min_value=0, max_value=1_000_000, value=10000, step=100,
-                                           key='projection_savings')
-        remaining_savings = [max(0.0, starting_savings - ongoing_shortfall * m) for m in months]
-        proj = pd.DataFrame({'Month': months, 'Savings remaining': remaining_savings})
-        st.line_chart(proj.set_index('Month'), x_label='Months from today', y_label='Savings ($)',
-                      color='#159447', height=250)
-        rows = ''.join(
-            '<tr style="border-bottom:1px solid #e5e7eb">'
-            f'<td style="padding:10px 6px">{m} months</td>'
-            f'<td style="padding:10px 6px;text-align:right;color:{"#b91c1c" if v == 0 else "#166534"};font-weight:700">${v:,.0f}</td></tr>'
-            for m, v in zip(months, remaining_savings)
-        )
-        st.markdown('<table style="width:100%;border-collapse:collapse"><thead><tr>'
-                    '<th style="text-align:left;padding:8px">When</th>'
-                    '<th style="text-align:right;padding:8px">Savings left</th>'
-                    '</tr></thead><tbody>'+rows+'</tbody></table>', unsafe_allow_html=True)
-        if ongoing_shortfall:
-            import math
-            empty_month = math.ceil(starting_savings / ongoing_shortfall) if starting_savings else 0
-            st.error(f'**SHOW ME THE MONEY!** At this rate, your savings would run out in about {empty_month} months. What will you do then?')
+    st.markdown('#### ③ What happens if I do nothing?')
+    st.markdown('### 🔴 SHOW ME THE MONEY!')
+    st.error(f'**You are spending ${monthly_gap:,.0f} more than you earn each month. Where will you get the money?**')
+    choice = st.radio('How are you covering the extra spending?',
+                      ['Using savings', 'Borrowing on a credit card'], horizontal=True,
+                      key='projection_view_new')
+    apply_plan = st.checkbox('Show what changes if I make my selected spending cuts',
+                             key='projection_apply_plan_new')
+    applied = float(selected_total) if apply_plan and st.session_state.get('finder',False) else 0.0
+    shortfall = max(0.0, monthly_gap-applied)
+    if apply_plan and applied == 0:
+        st.caption('Select expenses to cut above, then check this box again.')
+    periods=[0,3,6,12]
+    period_labels=['Today','3 months','6 months','12 months']
+    def dollar(n):
+        return f'${n:,.0f}'
+    if choice == 'Using savings':
+        savings_now = st.number_input('How much savings can you use? ($)',min_value=0,
+                                      max_value=1000000,value=10000,step=100,key='project_savings_new')
+        remaining_bal=[max(0, savings_now-shortfall*m) for m in periods]
+        max_y=max(float(savings_now),1.0)
+        bars=''.join(
+            f'<div style="flex:1;min-width:0;text-align:center">'
+            f'<div style="font-size:15px;font-weight:750;color:{"#b91c1c" if (m>0 and v==0) else "#136c3c"}">{dollar(v)}</div>'
+            f'<div style="height:{max(4,int(v/max_y*165))}px;background:{"#dc2626" if (m>0 and v==0) else "#16a34a"};border-radius:8px 8px 0 0;margin:6px auto 0;max-width:96px"></div>'
+            f'<div style="font-size:13px;margin-top:10px;font-weight:600">{label}</div></div>'
+            for m,v,label in zip(periods,remaining_bal,period_labels))
+        st.markdown('**Your savings over time**')
+        st.markdown('<div style="display:flex;align-items:flex-end;gap:12px;border-bottom:1px solid #cbd5e1;padding:8px 3px 6px">'+bars+'</div>',unsafe_allow_html=True)
+        if shortfall>0:
+            from math import ceil
+            exhausted=ceil(savings_now/shortfall) if savings_now>0 else 0
+            st.error(f'**At this rate your savings run out in about {exhausted} months. What will you do then?**')
         else:
-            st.success('Your selected monthly changes could stop this savings loss. You still need to follow through.')
-        st.caption('Example only: assumes the amount entered is available to spend, no added income, investment returns, or other withdrawals. Money reserved for bills must not be counted as available savings.')
-    st.markdown('**You don’t know what someone else can afford. You do know what you can afford.**')
-    st.caption('Live according to your numbers, not someone else’s appearance.')
+            st.success('Your selected spending cuts could stop the monthly loss. Now you need to follow through.')
+        st.caption('Example only. Assumes steady spending and income, no interest earned, and savings available for this purpose.')
+    else:
+        rate=st.number_input('Credit card interest rate (% per year)',min_value=0.0,
+                             max_value=100.0,value=25.0,step=0.5,key='project_apr_new')
+        r=rate/1200
+        balances={0:0.0}
+        balance=0.0
+        for m in range(1,13):
+            balance=balance*(1+r)+shortfall
+            if m in periods: balances[m]=balance
+        borrowing=[shortfall*m for m in periods]
+        owed=[balances[m] for m in periods]
+        max_y=max(max(owed),1)
+        grouped=''
+        for m,label,plain,with_int in zip(periods,period_labels,borrowing,owed):
+            h1=max(3,int(plain/max_y*166)) if plain else 3
+            h2=max(3,int(with_int/max_y*166)) if with_int else 3
+            grouped+=(f'<div style="flex:1;text-align:center;min-width:0">'
+                      f'<div style="font-size:14px;font-weight:800;color:#b91c1c">{dollar(with_int)}</div>'
+                      f'<div style="height:172px;display:flex;align-items:flex-end;justify-content:center;gap:5px">'
+                      f'<div title="Borrowed {dollar(plain)}" style="height:{h1}px;background:#9ca3af;width:35%;max-width:46px;border-radius:6px 6px 0 0"></div>'
+                      f'<div title="With interest {dollar(with_int)}" style="height:{h2}px;background:#dc2626;width:35%;max-width:46px;border-radius:6px 6px 0 0"></div>'
+                      f'</div><div style="font-size:13px;margin-top:10px;font-weight:600">{label}</div></div>')
+        st.markdown('**What you could owe over time**')
+        st.markdown('<div style="display:flex;align-items:flex-end;gap:12px;border-bottom:1px solid #cbd5e1">'+grouped+'</div>',unsafe_allow_html=True)
+        st.caption('Gray = borrowed money. Red = total debt including interest.')
+        st.markdown(f'**In 12 months, you borrow {dollar(borrowing[-1])}. With interest, you could owe {dollar(owed[-1])}.**')
+        st.error(f'**Where will you get {dollar(owed[-1])} to pay it back?**')
+        st.caption('Example only: borrowing occurs at each month-end; interest compounds monthly; no payments or fees. Real credit cards require minimum payments. Do not treat this as a repayment plan.')
     with st.expander('Why is it hard to spend less?'):
-        reason = st.radio('Choose the closest answer:', [
-            'My friends go out and I do not want to miss out.',
-            'I enjoy eating out or shopping.',
-            'I am too tired or busy to change my routine.',
-            'I did not realize how much I was spending.',
-            'I keep telling myself I will change next month.',
-            'Something else',
-        ], key='spending_reason')
-        if reason == 'Something else':
-            st.text_input('What is making this difficult?', key='spending_reason_other')
-        if st.button('Show my next step', key='reason_next_step'):
+        reason=st.radio('Choose what fits best:',[
+          'My friends go out and I do not want to miss out.',
+          'I like going out or shopping.',
+          'I am too tired or busy to change my routine.',
+          'I did not realize how much I spent.',
+          'I keep telling myself I will change next month.',
+          'Something else',],key='spending_reason_v51')
+        if reason=='Something else':
+            st.text_input('Tell us what is getting in the way',key='spending_reason_other_v51')
+        if st.button('Show my next step',key='reason_next_step_v51'):
             if reason.startswith('My friends'):
-                st.info('Your friends do not pay your bills. Plan a lower-cost way to see them this week.')
-            elif reason.startswith('I am too tired'):
-                st.info('Choose one cheaper, easier option for the next week. Start with one change you can repeat.')
+                st.info('Your friends do not pay your bills. Suggest a lower-cost way to see them this week.')
             else:
-                st.info('Pick one expense you will stop or reduce this week. Check next week whether you did it.')
-    st.caption('Movie clip not included in this public demo. Use original on-screen wording only until rights to the film footage and sound are confirmed.')
+                st.info('Choose one expense to cut this week. Next week, check if you actually did it.')
+    st.caption('You do not know what someone else can afford. Live according to your numbers, not their appearance.')
+    st.caption('Fictional-data demo. No movie clip is embedded.')
+else:
+    st.markdown('#### ③ What happens if I do nothing?')
+    if expected < 0:
+        st.write('You may miss a payment. This could mean late fees, interest, or loss of a service, depending on the bill.')
+    elif key == '5':
+        st.write('If the payment does not go through, the bill will still be unpaid.')
+    else:
+        st.write('A missed payment could cost you more. Check the due date and make sure the money is there.')
 
 st.markdown('#### Your next step')
 a,b=st.columns(2)
